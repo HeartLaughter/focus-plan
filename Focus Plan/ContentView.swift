@@ -7,7 +7,10 @@
 
 import SwiftUI
 
+// 主入口视图，包含底部 TabView
 struct ContentView: View {
+    @StateObject private var taskStore = TaskStore()  // 添加这一行
+
     var body: some View {
         TabView {
             TaskView()
@@ -25,24 +28,42 @@ struct ContentView: View {
                     Label("统计", systemImage: "chart.bar")
                 }
         }
+        .environmentObject(taskStore)  // 添加这一行
+
     }
 }
 
-struct Task: Identifiable {
+// 任务模型结构体，符合 Identifiable 和 Hashable 以支持 ForEach
+struct Task: Identifiable, Hashable {
     let id = UUID()
     var name: String
     var children: [Task]? = nil
     var isUsingPomodoro: Bool = true
+    var startHour: Int? = nil
+    var endHour: Int? = nil
 }
 
-struct TaskView: View {
-    @State private var tasks: [Task] = [
+// 全局任务数据模型
+class TaskStore: ObservableObject {
+    @Published var tasks: [Task] = [
         Task(name: "学习", children: [
-            Task(name: "数学"),
-            Task(name: "英语")
+            Task(name: "数学", startHour: 10, endHour: 12),
+            Task(name: "英语", startHour: 14, endHour: 15)
         ]),
-        Task(name: "工作")
+        Task(name: "工作", children: [
+            Task(name: "项目 A", startHour: 16, endHour: 18)
+        ])
     ]
+
+    // 获取所有扁平化的任务（即 children 任务）
+    var allFlatTasks: [Task] {
+        tasks.flatMap { $0.children ?? [] }.filter { $0.startHour != nil && $0.endHour != nil }
+    }
+}
+
+// 任务视图界面
+struct TaskView: View {
+    @StateObject private var taskStore = TaskStore()
     @State private var newFolderName: String = ""
     @State private var showingNewTaskAlert: UUID? = nil
     @State private var newTaskName: String = ""
@@ -50,6 +71,7 @@ struct TaskView: View {
     var body: some View {
         NavigationView {
             VStack {
+                // 顶部添加文件夹栏
                 HStack {
                     TextField("新文件夹名称", text: $newFolderName)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -57,56 +79,66 @@ struct TaskView: View {
 
                     Button("添加文件夹") {
                         guard !newFolderName.isEmpty else { return }
-                        tasks.append(Task(name: newFolderName, children: []))
+                        taskStore.tasks.append(Task(name: newFolderName, children: []))
                         newFolderName = ""
                     }
                     .padding(.trailing)
                 }
                 .padding(.top)
 
+                // 文件夹和任务列表
                 List {
-                    ForEach($tasks) { $folder in
+                    ForEach($taskStore.tasks) { $folder in
                         Section(header:
-                                    HStack {
-                            Text(folder.name).font(.headline)
-                            Spacer()
-                            Button(action: {
-                                showingNewTaskAlert = folder.id
+                            HStack {
+                                Text(folder.name).font(.headline)
+                                Spacer()
+                                Button(action: {
+                                    showingNewTaskAlert = folder.id
+                                }) {
+                                    Image(systemName: "plus.circle")
+                                }
                             }) {
-                                Image(systemName: "plus.circle")
-                            }
-                        }) {
-                            if let children = folder.children {
-                                ForEach(children) { task in
-                                    HStack {
-                                        Text(task.name)
-                                        Spacer()
-                                        Picker("", selection: .constant(task.isUsingPomodoro)) {
-                                            Text("番茄钟").tag(true)
-                                            Text("正向计时").tag(false)
+                                if let children = folder.children {
+                                    ForEach(children) { task in
+                                        VStack(alignment: .leading) {
+                                            HStack {
+                                                Text(task.name)
+                                                Spacer()
+                                                Picker("", selection: .constant(task.isUsingPomodoro)) {
+                                                    Text("番茄钟").tag(true)
+                                                    Text("正向计时").tag(false)
+                                                }
+                                                .pickerStyle(SegmentedPickerStyle())
+                                                .frame(width: 140)
+                                                .disabled(true)
+                                            }
+                                            // 显示任务的时间段信息（如果存在）
+                                            if let start = task.startHour, let end = task.endHour {
+                                                Text("时间段：\(start):00 - \(end):00")
+                                                    .font(.caption)
+                                                    .foregroundColor(.gray)
+                                            }
                                         }
-                                        .pickerStyle(SegmentedPickerStyle())
-                                        .frame(width: 140)
-                                        .disabled(true)
                                     }
                                 }
-                            }
                         }
                     }
                 }
             }
             .navigationTitle("任务管理")
+            // 添加任务弹窗
             .alert("新任务名称", isPresented: Binding<Bool>(
                 get: { showingNewTaskAlert != nil },
                 set: { if !$0 { showingNewTaskAlert = nil } }
             )) {
                 TextField("任务名称", text: $newTaskName)
                 Button("添加") {
-                    if let folderIndex = tasks.firstIndex(where: { $0.id == showingNewTaskAlert }) {
-                        if tasks[folderIndex].children == nil {
-                            tasks[folderIndex].children = []
+                    if let folderIndex = taskStore.tasks.firstIndex(where: { $0.id == showingNewTaskAlert }) {
+                        if taskStore.tasks[folderIndex].children == nil {
+                            taskStore.tasks[folderIndex].children = []
                         }
-                        tasks[folderIndex].children!.append(Task(name: newTaskName))
+                        taskStore.tasks[folderIndex].children!.append(Task(name: newTaskName))
                     }
                     newTaskName = ""
                     showingNewTaskAlert = nil
@@ -117,10 +149,14 @@ struct TaskView: View {
                 }
             }
         }
+        // 注入环境对象以在 CalendarView 中使用
+        .environmentObject(taskStore)
     }
 }
 
+// 日历视图界面
 struct CalendarView: View {
+    @EnvironmentObject var taskStore: TaskStore
     @State private var selectedYear = Calendar.current.component(.year, from: Date())
     @State private var selectedMonth = Calendar.current.component(.month, from: Date())
     @State private var selectedDay = Calendar.current.component(.day, from: Date())
@@ -131,6 +167,7 @@ struct CalendarView: View {
                 .font(.largeTitle)
                 .bold()
 
+            // 年月日选择器
             HStack(spacing: 20) {
                 Picker("年", selection: $selectedYear) {
                     ForEach(2020...2030, id: \.self) { year in
@@ -168,19 +205,45 @@ struct CalendarView: View {
                 .font(.headline)
 
             ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(0..<24, id: \.self) { hour in
-                        HStack {
-                            Text(String(format: "%02d:00", hour))
-                                .frame(width: 60, alignment: .leading)
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(height: 30)
-                                .overlay(
-                                    Text("任务待填").font(.footnote).foregroundColor(.gray), alignment: .leading
-                                )
+                ZStack(alignment: .top) {
+                    // 背景时间线（每小时一格）
+                    VStack(spacing: 0) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.1))
+                                    .frame(height: 40)
+
+                                Text(String(format: "%02d:00", hour))
+                                    .font(.caption)
+                                    .padding(.leading, 8)
+                            }
                         }
-                        .padding(.horizontal)
+                    }
+
+                    // 任务时间块绘制（可视化）
+                    ForEach(taskStore.allFlatTasks, id: \.self) { task in
+                        if let start = task.startHour, let end = task.endHour {
+                            // 计算高度（每小时 40pt）
+                            let height = CGFloat(end - start) * 40
+                            // 计算纵向偏移位置
+                            let yOffset = CGFloat(start) * 40
+
+                            // 渲染任务蓝色块并叠加任务名
+                            Rectangle()
+                                .fill(Color.blue.opacity(0.6))
+                                .cornerRadius(4)
+                                .frame(height: height)
+                                .overlay(
+                                    Text(task.name)
+                                        .font(.caption)
+                                        .foregroundColor(.white)
+                                        .padding(4),
+                                    alignment: .topLeading
+                                )
+                                .offset(y: yOffset)
+                                .padding(.horizontal, 8)
+                        }
                     }
                 }
             }
@@ -189,6 +252,7 @@ struct CalendarView: View {
     }
 }
 
+// 统计页面占位
 struct StatisticsView: View {
     var body: some View {
         Text("这里是统计页面")
@@ -197,6 +261,8 @@ struct StatisticsView: View {
     }
 }
 
+// 预览
 #Preview {
     ContentView()
+        .environmentObject(TaskStore())
 }
