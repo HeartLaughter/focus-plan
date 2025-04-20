@@ -5,10 +5,11 @@ struct ContentView: View {
     
     var body: some View {
         TabView {
-            TaskView(viewModel: taskViewModel)
-                .tabItem {
-                    Label("任务", systemImage: "list.bullet")
+            MainTaskAndTimerPanelView(taskViewModel: taskViewModel)
+                .tabItem { Label("任务", systemImage: "list.bullet")
                 }
+                // 其他页面...
+                
 
             CalendarView(viewModel: CalendarViewModel(taskViewModel: taskViewModel))
                 .tabItem {

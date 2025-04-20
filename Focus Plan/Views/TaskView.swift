@@ -10,6 +10,7 @@ import SwiftUI
 struct TaskView: View {
     @ObservedObject var viewModel: TaskViewModel
     @State private var showingNewTaskAlert: Bool = false
+    var onTaskSelect: (Task) -> Void
     
     var body: some View {
         NavigationView {
@@ -43,7 +44,12 @@ struct TaskView: View {
                             }) {
                                 if let children = folder.children {
                                     ForEach(children) { task in
-                                        TaskRowView(task: task)
+                                        Button(action: {
+                                            onTaskSelect(task)
+                                        }) {
+                                            TaskRowView(task: task)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
                                     }
                                 }
                         }
