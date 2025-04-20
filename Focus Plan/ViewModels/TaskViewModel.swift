@@ -17,7 +17,7 @@ class TaskViewModel: ObservableObject {
     var allFlatTasks: [Task] {
         folders.flatMap { $0.children ?? [] }.filter { $0.startHour != nil && $0.endHour != nil }
     }
-    
+
     init() {
         // 初始化一些示例数据
         folders = [
